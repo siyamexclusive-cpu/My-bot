@@ -1,5 +1,6 @@
 const { Telegraf, Markup } = require('telegraf');
 
+// 🔥 আপনার দেওয়া টোকেন ও এপিআই কি 🔥
 const BOT_TOKEN = '8739819887:AAEK41gSTtlIhp6Cf2vOo8qgAILxMrVAzLk';
 const FREECONVERT_API_KEY = 'api_production_af64ad2492341596e04e9eaf9903a77b0faf981014670ebfa58779e782558ca7.6a2bea2e6a1cfab87b30ffec.6a2bed64f56d6c712a44743c';
 
@@ -62,7 +63,7 @@ async function convertMedia(videoUrl, targetFormat) {
 }
 
 // ==========================================
-// 🔥 LINK DETECTOR & SOCIAL DOWNLOADER 🔥
+// 🔥 MULTI-SERVER SOCIAL DOWNLOADER 🔥
 // ==========================================
 bot.on('text', async (ctx) => {
     const text = ctx.message.text.trim();
@@ -80,26 +81,42 @@ bot.on('text', async (ctx) => {
     const waitMsg = await ctx.reply('⏳ *লিংক যাচাই করা হচ্ছে ও ভিডিও ডাউনলোড হচ্ছে...*', { parse_mode: 'Markdown' });
 
     try {
-        // 🔥 Status 400 ফিক্স করার জন্য স্ট্যাবল API ইনস্ট্যান্স এবং কোয়ালিটি প্যারামিটার যুক্ত করা হলো 🔥
-        const cobaltRes = await fetch('https://co.wuk.sh/api/json', {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            },
-            body: JSON.stringify({ 
-                url: videoLink,
-                vQuality: "720", 
-                disableMetadata: true 
-            })
-        });
-        
-        if (!cobaltRes.ok) {
-            throw new Error(`API Update Error (Status: ${cobaltRes.status})`);
+        // 🔥 Multi-Server Auto Switcher 🔥
+        const instances = [
+            'https://api.cobalt.tools/api/json',
+            'https://co.wuk.sh/api/json',
+            'https://cobalt.q0.o.lencr.org/api/json',
+            'https://api.cobalt.mywire.org/api/json'
+        ];
+
+        let cobaltData = null;
+        let fetchError = "Unknown Error";
+
+        for (let apiUrl of instances) {
+            try {
+                const res = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    },
+                    body: JSON.stringify({ url: videoLink, disableMetadata: true })
+                });
+                
+                if (res.ok) {
+                    cobaltData = await res.json();
+                    break; // সার্ভার কাজ করলে লুপ থেকে বেরিয়ে যাবে
+                }
+            } catch (e) {
+                fetchError = e.message;
+                continue; // এরর দিলে লুপ পরের সার্ভার ট্রাই করবে
+            }
         }
 
-        const cobaltData = await cobaltRes.json();
+        if (!cobaltData) {
+            throw new Error(`সবগুলো ফ্রি সার্ভার এই মুহূর্তে ব্লক বা ডাউন আছে। (${fetchError})`);
+        }
 
         if (cobaltData.status === 'error') {
             throw new Error(cobaltData.text || "ভিডিওটি প্রাইভেট বা সাপোর্ট করে না।");
@@ -130,7 +147,7 @@ bot.on('text', async (ctx) => {
         );
     } catch (error) {
         await ctx.deleteMessage(waitMsg.message_id).catch(() => {});
-        ctx.reply(`❌ *ভিডিও ডাউনলোড ফেইল হয়েছে!*\n\n*কারণ:* ${error.message}\n\n(লিংকটি প্রাইভেট হতে পারে অথবা YouTube/FB এর সার্ভার ব্লক করেছে)`, { parse_mode: 'Markdown' });
+        ctx.reply(`❌ *ভিডিও ডাউনলোড ফেইল হয়েছে!*\n\n*কারণ:* ${error.message}\n\n(ফ্রি সার্ভারগুলো Vercel কে ব্লক করছে। এর স্থায়ী সমাধানের জন্য আমাদের RapidAPI ব্যবহার করতে হবে)`, { parse_mode: 'Markdown' });
     }
 });
 
@@ -167,9 +184,19 @@ bot.action(/^3gp\|(.+)$/, async (ctx) => {
     }
 });
 
+// ==========================================
+// 🔥 VERCEL SERVER HANDLER 🔥
+// ==========================================
 module.exports = async function handler(req, res) {
     if (req.method === 'POST') {
-        try { await bot.handleUpdate(req.body); res.status(200).send('OK'); } 
-        catch (error) { res.status(500).send('Error'); }
-    } else { res.status(200).send('Media Bot Live!'); }
+        try { 
+            await bot.handleUpdate(req.body); 
+            res.status(200).send('OK'); 
+        } 
+        catch (error) { 
+            res.status(500).send('Error'); 
+        }
+    } else { 
+        res.status(200).send('Media Bot Live!'); 
+    }
 };

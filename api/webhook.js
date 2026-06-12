@@ -1,6 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
 
-// 🔥 আপনার দেওয়া টোকেন ও এপিআই কি সরাসরি কোডে যুক্ত করা হলো 🔥
 const BOT_TOKEN = '8739819887:AAEK41gSTtlIhp6Cf2vOo8qgAILxMrVAzLk';
 const FREECONVERT_API_KEY = 'api_production_af64ad2492341596e04e9eaf9903a77b0faf981014670ebfa58779e782558ca7.6a2bea2e6a1cfab87b30ffec.6a2bed64f56d6c712a44743c';
 
@@ -22,24 +21,17 @@ bot.command('start', (ctx) => {
 async function convertMedia(videoUrl, targetFormat) {
     const payload = {
         tasks: {
-            "import-vid": { 
-                "operation": "import/url", 
-                "url": videoUrl 
-            },
+            "import-vid": { "operation": "import/url", "url": videoUrl },
             "convert-vid": { 
                 "operation": "convert", 
                 "input": "import-vid", 
-                "output_format": targetFormat, // '3gp' অথবা 'mp3'
+                "output_format": targetFormat, 
                 "options": targetFormat === '3gp' ? { "video_resolution": "176x144" } : {} 
             },
-            "export-url": { 
-                "operation": "export/url", 
-                "input": "convert-vid" 
-            }
+            "export-url": { "operation": "export/url", "input": "convert-vid" }
         }
     };
 
-    // ১. FreeConvert এ নতুন কাজ পাঠানো
     let createRes = await fetch('https://api.freeconvert.com/v1/process/jobs', {
         method: 'POST',
         headers: { 
@@ -52,10 +44,8 @@ async function convertMedia(videoUrl, targetFormat) {
     if (!jobData.id) throw new Error("FreeConvert API error");
     let jobId = jobData.id;
 
-    // ২. ফাইল কনভার্ট শেষ হওয়া পর্যন্ত অপেক্ষা করা (Polling)
     while (true) {
-        await new Promise(resolve => setTimeout(resolve, 3000)); // ৩ সেকেন্ড পর পর চেক করবে
-        
+        await new Promise(resolve => setTimeout(resolve, 3000));
         let statusRes = await fetch(`https://api.freeconvert.com/v1/process/jobs/${jobId}`, {
             headers: { 'Authorization': `Bearer ${FREECONVERT_API_KEY}` }
         });
@@ -86,47 +76,56 @@ bot.on('text', async (ctx) => {
     }
 
     const videoLink = urls[0];
-    const waitMsg = await ctx.reply('⏳ *লিংক যাচাই করা হচ্ছে ও ভিডিও প্রসেস হচ্ছে...*', { parse_mode: 'Markdown' });
+    const waitMsg = await ctx.reply('⏳ *লিংক যাচাই করা হচ্ছে ও ভিডিও ডাউনলোড হচ্ছে...*', { parse_mode: 'Markdown' });
 
     try {
-        // 🛠️ ফ্রি Cobalt API ব্যবহার করে সোশ্যাল ভিডিওর মেইন ডাইরেক্ট MP4 লিংক বের করা
+        // 🔥 ব্রাউজার User-Agent যোগ করা হয়েছে যাতে API ব্লক না করে 🔥
         const cobaltRes = await fetch('https://api.cobalt.tools/api/json', {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             },
             body: JSON.stringify({ url: videoLink })
         });
+        
+        if (!cobaltRes.ok) {
+            throw new Error(`API Blocked/Down (Status: ${cobaltRes.status})`);
+        }
+
         const cobaltData = await cobaltRes.json();
 
-        if (cobaltData.status === 'stream' || cobaltData.status === 'picker' || cobaltData.url) {
-            const directMp4Url = cobaltData.url || cobaltData.picker[0].url;
-
-            await ctx.deleteMessage(waitMsg.message_id).catch(() => {});
-
-            // ইউজারকে মেইন ভিডিওটি পাঠানো এবং সাথে কনভার্ট করার ২টা ইনলাইন বাটন দেওয়া
-            await ctx.replyWithVideo(
-                { url: directMp4Url },
-                {
-                    caption: `🎬 *আপনার ভিডিওটি সফলভাবে ডাউনলোড হয়েছে!*`,
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [
-                                { text: '🎵 Convert to MP3 (Audio)', callback_data: `aud|${directMp4Url}` },
-                                { text: '📱 Convert to 3GP (144p)', callback_data: `3gp|${directMp4Url}` }
-                            ]
-                        ]
-                    }
-                }
-            );
-        } else {
-            throw new Error("Could not fetch video URL");
+        if (cobaltData.status === 'error') {
+            throw new Error(cobaltData.text || "API Error Occurred");
         }
+
+        const directMp4Url = cobaltData.url || (cobaltData.picker && cobaltData.picker[0].url);
+
+        if (!directMp4Url) throw new Error("ভিডিওর ডাইরেক্ট লিংক পাওয়া যায়নি।");
+
+        await ctx.deleteMessage(waitMsg.message_id).catch(() => {});
+
+        // ইউজারকে ভিডিও পাঠানো
+        await ctx.replyWithVideo(
+            { url: directMp4Url },
+            {
+                caption: `🎬 *আপনার ভিডিওটি সফলভাবে ডাউনলোড হয়েছে!*`,
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '🎵 Convert to MP3 (Audio)', callback_data: `aud|${directMp4Url}` },
+                            { text: '📱 Convert to 3GP (144p)', callback_data: `3gp|${directMp4Url}` }
+                        ]
+                    ]
+                }
+            }
+        );
     } catch (error) {
         await ctx.deleteMessage(waitMsg.message_id).catch(() => {});
-        ctx.reply('❌ ভিডিওটি ডাউনলোড করতে সমস্যা হয়েছে। লিংকটি আবার চেক করুন বা কিছুক্ষণ পর চেষ্টা করুন।');
+        // 🚨 আসল এরর মেসেজটি ইউজারকে দেখাবে 🚨
+        ctx.reply(`❌ *ভিডিও ডাউনলোড ফেইল হয়েছে!*\n\n*কারণ:* ${error.message}\n\n(যদি সমস্যাটি বারবার হয়, এরর মেসেজটি অ্যাডমিনকে দিন)`, { parse_mode: 'Markdown' });
     }
 });
 
@@ -136,7 +135,7 @@ bot.on('text', async (ctx) => {
 bot.action(/^aud\|(.+)$/, async (ctx) => {
     const directUrl = ctx.match[1];
     ctx.answerCbQuery('অডিও কনভার্ট শুরু হচ্ছে...').catch(() => {});
-    const progressMsg = await ctx.reply('⏳ *ভিডিও থেকে MP3 অডিও তৈরি করা হচ্ছে...* \nइसमें ১-২ মিনিট সময় লাগতে পারে।', { parse_mode: 'Markdown' });
+    const progressMsg = await ctx.reply('⏳ *ভিডিও থেকে MP3 অডিও তৈরি করা হচ্ছে...* \nএতে ১-২ মিনিট সময় লাগতে পারে।', { parse_mode: 'Markdown' });
 
     try {
         const mp3Url = await convertMedia(directUrl, 'mp3');
@@ -144,7 +143,7 @@ bot.action(/^aud\|(.+)$/, async (ctx) => {
         await ctx.replyWithAudio({ url: mp3Url }, { caption: '🎵 *আপনার অডিও ফাইল রেডি!*' });
     } catch (e) {
         await ctx.deleteMessage(progressMsg.message_id).catch(() => {});
-        ctx.reply('❌ অ디오 কনভার্ট করতে সমস্যা হয়েছে। FreeConvert-এর ফ্রি লিমিট শেষ হয়ে থাকতে পারে।');
+        ctx.reply('❌ অডিও কনভার্ট করতে সমস্যা হয়েছে। FreeConvert-এর ফ্রি লিমিট শেষ হয়ে থাকতে পারে।');
     }
 });
 
@@ -163,16 +162,9 @@ bot.action(/^3gp\|(.+)$/, async (ctx) => {
     }
 });
 
-// Vercel Server Handler
 module.exports = async function handler(req, res) {
     if (req.method === 'POST') {
-        try { 
-            await bot.handleUpdate(req.body); 
-            res.status(200).send('OK'); 
-        } catch (error) { 
-            res.status(500).send('Error'); 
-        }
-    } else { 
-        res.status(200).send('Media Downloader & Converter Bot is Live!'); 
-    }
+        try { await bot.handleUpdate(req.body); res.status(200).send('OK'); } 
+        catch (error) { res.status(500).send('Error'); }
+    } else { res.status(200).send('Media Bot Live!'); }
 };

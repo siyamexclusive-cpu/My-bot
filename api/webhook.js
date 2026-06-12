@@ -40,6 +40,7 @@ async function convertMedia(videoUrl, targetFormat) {
         },
         body: JSON.stringify(payload)
     });
+    
     let jobData = await createRes.json();
     if (!jobData.id) throw new Error("FreeConvert API error");
     let jobId = jobData.id;
@@ -79,27 +80,32 @@ bot.on('text', async (ctx) => {
     const waitMsg = await ctx.reply('⏳ *লিংক যাচাই করা হচ্ছে ও ভিডিও ডাউনলোড হচ্ছে...*', { parse_mode: 'Markdown' });
 
     try {
-        // 🔥 ব্রাউজার User-Agent যোগ করা হয়েছে যাতে API ব্লক না করে 🔥
-        const cobaltRes = await fetch('https://api.cobalt.tools/api/json', {
+        // 🔥 Status 400 ফিক্স করার জন্য স্ট্যাবল API ইনস্ট্যান্স এবং কোয়ালিটি প্যারামিটার যুক্ত করা হলো 🔥
+        const cobaltRes = await fetch('https://co.wuk.sh/api/json', {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             },
-            body: JSON.stringify({ url: videoLink })
+            body: JSON.stringify({ 
+                url: videoLink,
+                vQuality: "720", 
+                disableMetadata: true 
+            })
         });
         
         if (!cobaltRes.ok) {
-            throw new Error(`API Blocked/Down (Status: ${cobaltRes.status})`);
+            throw new Error(`API Update Error (Status: ${cobaltRes.status})`);
         }
 
         const cobaltData = await cobaltRes.json();
 
         if (cobaltData.status === 'error') {
-            throw new Error(cobaltData.text || "API Error Occurred");
+            throw new Error(cobaltData.text || "ভিডিওটি প্রাইভেট বা সাপোর্ট করে না।");
         }
 
+        // ডাইরেক্ট লিংক বের করা
         const directMp4Url = cobaltData.url || (cobaltData.picker && cobaltData.picker[0].url);
 
         if (!directMp4Url) throw new Error("ভিডিওর ডাইরেক্ট লিংক পাওয়া যায়নি।");
@@ -124,8 +130,7 @@ bot.on('text', async (ctx) => {
         );
     } catch (error) {
         await ctx.deleteMessage(waitMsg.message_id).catch(() => {});
-        // 🚨 আসল এরর মেসেজটি ইউজারকে দেখাবে 🚨
-        ctx.reply(`❌ *ভিডিও ডাউনলোড ফেইল হয়েছে!*\n\n*কারণ:* ${error.message}\n\n(যদি সমস্যাটি বারবার হয়, এরর মেসেজটি অ্যাডমিনকে দিন)`, { parse_mode: 'Markdown' });
+        ctx.reply(`❌ *ভিডিও ডাউনলোড ফেইল হয়েছে!*\n\n*কারণ:* ${error.message}\n\n(লিংকটি প্রাইভেট হতে পারে অথবা YouTube/FB এর সার্ভার ব্লক করেছে)`, { parse_mode: 'Markdown' });
     }
 });
 
